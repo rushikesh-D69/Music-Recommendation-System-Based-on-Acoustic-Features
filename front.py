@@ -1,7 +1,3 @@
-import os
-#os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Use CPU only
-#os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"   # Suppress TensorFlow logs: 0 = all logs, 1 = filter INFO, 2 = filter WARNING, 3 = filter ERROR
-
 import streamlit as st
 import numpy as np
 import pandas as pd
