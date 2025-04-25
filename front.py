@@ -14,17 +14,17 @@ import time
 
 # Set page config and theme
 st.set_page_config(
-    page_title="CHORD based Music Recommendation System",
+    page_title="Music Recommendation System Based on Acoustic Features",
     page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Professional Dark Theme CSS
+# Enhanced Professional Dark Theme CSS
 st.markdown("""
     <style>
     .main {
-        background-color: #1E1E1E;
+        background-color: #121212;
         color: #E0E0E0;
     }
     
@@ -33,90 +33,177 @@ st.markdown("""
         font-family: 'Helvetica Neue', sans-serif;
         font-weight: 500;
         margin-bottom: 1.5rem;
+        letter-spacing: 0.5px;
+    }
+    
+    h1 {
+        background: linear-gradient(90deg, #4A90E2, #28D5BD);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-size: 2.5rem;
     }
     
     .stButton>button {
-        background: linear-gradient(90deg, #2C5364, #203A43);
+        background: linear-gradient(90deg, #4A90E2, #28D5BD);
         color: white;
-        border-radius: 4px;
-        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        padding: 0.6rem 1.2rem;
         border: none;
         font-weight: 500;
-        font-size: 0.9rem;
+        font-size: 0.95rem;
         transition: all 0.3s ease;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }
     
     .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        transform: translateY(-3px);
+        box-shadow: 0 7px 14px rgba(0,0,0,0.2);
+    }
+    
+    .stButton>button:active {
+        transform: translateY(1px);
     }
     
     .card {
-        background: #2D2D2D;
-        padding: 1.5rem;
-        border-radius: 8px;
-        margin: 1rem 0;
-        border: 1px solid #3D3D3D;
-        transition: all 0.3s ease;
+        background: linear-gradient(145deg, #1E1E1E, #2A2A2A);
+        padding: 1.8rem;
+        border-radius: 12px;
+        margin: 1.2rem 0;
+        border: 1px solid #333333;
+        transition: all 0.4s ease;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
     }
     
     .card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+        transform: translateY(-4px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+        border-color: rgba(74, 144, 226, 0.5);
     }
     
     .highlight {
-        color: #4A90E2;
+        color: #28D5BD;
         font-weight: 500;
     }
     
     .pattern-match {
-        color: #4A90E2;
-        font-weight: 500;
+        color: #FF4B91;
+        font-weight: 600;
+        text-shadow: 0 0 5px rgba(255, 75, 145, 0.3);
     }
     
     .metric-card {
-        background: #2D2D2D;
-        padding: 1rem;
-        border-radius: 8px;
+        background: linear-gradient(145deg, #1E1E1E, #2A2A2A);
+        padding: 1.5rem;
+        border-radius: 12px;
         text-align: center;
-        border: 1px solid #3D3D3D;
+        border: 1px solid #333333;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+        transition: all 0.3s ease;
+    }
+    
+    .metric-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.2);
     }
     
     .metric-value {
-        font-size: 1.5rem;
-        font-weight: 500;
-        color: #4A90E2;
+        font-size: 2rem;
+        font-weight: 600;
+        background: linear-gradient(90deg, #4A90E2, #28D5BD);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.5rem;
     }
     
     .metric-label {
         font-size: 0.9rem;
-        color: #888888;
+        color: #BBBBBB;
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }
     
     .stTabs [data-baseweb="tab-list"] {
         gap: 1rem;
-        background-color: #2D2D2D;
-        padding: 0.5rem;
-        border-radius: 8px;
+        background-color: #1A1A1A;
+        padding: 0.7rem;
+        border-radius: 10px;
+        border: 1px solid #333333;
     }
     
     .stTabs [data-baseweb="tab"] {
-        padding: 0.5rem 1rem;
+        padding: 0.7rem 1.2rem;
         font-weight: 500;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        font-size: 0.85rem;
     }
     
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(90deg, #2C5364, #203A43);
+        background: linear-gradient(90deg, #4A90E2, #28D5BD);
         color: white;
-        border-radius: 4px;
+        border-radius: 6px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
     }
     
     audio {
         width: 100%;
-        height: 40px;
-        border-radius: 4px;
-        margin: 0.5rem 0;
+        height: 48px;
+        border-radius: 8px;
+        margin: 0.7rem 0;
+        background: #1A1A1A;
+    }
+    
+    .audio-card {
+        padding: 0.5rem 0;
+    }
+    
+    input[type="text"], .stSelectbox>div>div {
+        background-color: #1A1A1A !important;
+        border: 1px solid #333333 !important;
+        border-radius: 8px !important;
+        color: white !important;
+        padding: 0.7rem !important;
+    }
+    
+    .stSlider {
+        padding: 1rem 0 !important;
+    }
+    
+    .stSlider > div {
+        height: 6px !important;
+    }
+    
+    .stSlider > div > div > div {
+        background: linear-gradient(90deg, #4A90E2, #28D5BD) !important;
+        height: 6px !important;
+    }
+    
+    .stSlider > div > div > div > div {
+        background: white !important;
+        border: 2px solid #28D5BD !important;
+        box-shadow: 0 0 10px rgba(40, 213, 189, 0.5) !important;
+    }
+    
+    .sidebar .sidebar-content {
+        background-color: #0D0D0D !important;
+    }
+    
+    hr {
+        border-color: #333333 !important;
+        margin: 2rem 0 !important;
+    }
+    
+    /* Custom animations */
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(74, 144, 226, 0.7); }
+        70% { box-shadow: 0 0 0 10px rgba(74, 144, 226, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(74, 144, 226, 0); }
+    }
+    
+    .pulse {
+        animation: pulse 2s infinite;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -126,7 +213,7 @@ def show_sidebar():
     with st.sidebar:
         st.markdown("""
         <div style='text-align: center;'>
-            <h1>🎵 Music Recommender</h1>
+            <h1>Music Recommender</h1>
             <p>Discover similar songs based on audio features</p>
         </div>
         """, unsafe_allow_html=True)
@@ -233,7 +320,7 @@ def get_audio_path(song_name):
     """Get the exact audio file path from audio_clips folder"""
     return str(Path('audio_clips') / f"{song_name}.wav")
 
-def display_audio_player(song_name, title_color="#FF7676"):
+def display_audio_player(song_name, title_color="#4A90E2"):
     """Display an audio player with song title"""
     try:
         audio_dir = Path('audio_clips')
@@ -280,12 +367,12 @@ def plot_similarity_scores(similarities, songs):
     ax.set_title('Most Similar Songs', color='white', pad=20)
     
     # Set dark theme
-    fig.patch.set_facecolor('#1a1a1a')
-    ax.set_facecolor('#2d2d2d')
-    ax.spines['bottom'].set_color('white')
-    ax.spines['top'].set_color('white')
-    ax.spines['right'].set_color('white')
-    ax.spines['left'].set_color('white')
+    fig.patch.set_facecolor('#121212')
+    ax.set_facecolor('#1A1A1A')
+    ax.spines['bottom'].set_color('#444444')
+    ax.spines['top'].set_color('#444444')
+    ax.spines['right'].set_color('#444444')
+    ax.spines['left'].set_color('#444444')
     ax.tick_params(colors='white')
     
     plt.tight_layout()
@@ -449,13 +536,13 @@ def display_chord_progression(song_info):
         <p><strong>Tempo:</strong> {song_info['tempo']:.1f} BPM</p>
         <p><strong>Full Progression:</strong></p>
         <p style="font-size: 1.1em; margin-top: 5px;">{progression_html}</p>
-        <p><em>Pink highlights show your chord sequence in the progression</em></p>
+        <p><em style="color: #AAAAAA;">Highlighted text shows your chord sequence in the progression</em></p>
     </div>
     """, unsafe_allow_html=True)
 
 def display_chord_selector(df):
     """Display chord selection interface with ordered selection and tempo filtering"""
-    st.markdown("### 🎼 Select Chords")
+    st.markdown("### Select Chords")
     st.markdown("Choose the chords you want to find similar songs with. The order of selection matters!")
     
     # Get unique chords
@@ -485,7 +572,7 @@ def display_chord_selector(df):
         st.rerun()
     
     # Add tempo filtering
-    st.markdown("### 🎵 Tempo Filter")
+    st.markdown("### Tempo Filter")
     use_tempo = st.checkbox("Filter by Tempo", value=False)
     tempo_filter = None
     
@@ -505,7 +592,7 @@ def display_chord_selector(df):
     
     # Add similarity threshold slider
     if st.session_state.selected_chords_order:
-        st.markdown("### 🎯 Similarity Threshold")
+        st.markdown("### Similarity Threshold")
         similarity_threshold = st.slider(
             "Minimum chord similarity percentage",
             min_value=0.2,
@@ -537,12 +624,12 @@ def plot_chord_distribution(df):
     plt.xticks(rotation=45)
     
     # Style the plot
-    ax.set_facecolor('#2D2D2D')
-    fig.patch.set_facecolor('#1E1E1E')
-    ax.spines['bottom'].set_color('#888888')
-    ax.spines['top'].set_color('#888888')
-    ax.spines['right'].set_color('#888888')
-    ax.spines['left'].set_color('#888888')
+    ax.set_facecolor('#1A1A1A')
+    fig.patch.set_facecolor('#121212')
+    ax.spines['bottom'].set_color('#444444')
+    ax.spines['top'].set_color('#444444')
+    ax.spines['right'].set_color('#444444')
+    ax.spines['left'].set_color('#444444')
     ax.tick_params(colors='#E0E0E0')
     ax.xaxis.label.set_color('#E0E0E0')
     ax.yaxis.label.set_color('#E0E0E0')
@@ -563,12 +650,12 @@ def plot_tempo_distribution(df):
     plt.ylabel('Count')
     
     # Style the plot
-    ax.set_facecolor('#2D2D2D')
-    fig.patch.set_facecolor('#1E1E1E')
-    ax.spines['bottom'].set_color('#888888')
-    ax.spines['top'].set_color('#888888')
-    ax.spines['right'].set_color('#888888')
-    ax.spines['left'].set_color('#888888')
+    ax.set_facecolor('#1A1A1A')
+    fig.patch.set_facecolor('#121212')
+    ax.spines['bottom'].set_color('#444444')
+    ax.spines['top'].set_color('#444444')
+    ax.spines['right'].set_color('#444444')
+    ax.spines['left'].set_color('#444444')
     ax.tick_params(colors='#E0E0E0')
     ax.xaxis.label.set_color('#E0E0E0')
     ax.yaxis.label.set_color('#E0E0E0')
@@ -639,10 +726,10 @@ def main():
     show_sidebar()
     
     # Main content
-    st.title("🎵 CHORD based Music Recommendation System")
+    st.title("Music Recommendation System Based on Acoustic Features")
     
     # Create tabs
-    tabs = st.tabs(["🎧 Song Selection", "🎼 Chord Search", "🔁 Recommendations", "📊 Analysis"])
+    tabs = st.tabs(["Song Selection", "Chord Search", "Recommendations", "Analysis"])
     
     # Load data and model with loading state
     with st.spinner("Loading model and data..."):
@@ -651,7 +738,7 @@ def main():
     
     # Song Selection Tab
     with tabs[0]:
-        st.markdown("### 🔍 Search and Select a Song")
+        st.markdown("### Search and Select a Song")
         
         search_query = st.text_input("Search for a song", key="search")
         if search_query:
@@ -665,7 +752,7 @@ def main():
         selected_song = st.selectbox("Select a song:", filtered_songs)
         
         if selected_song:
-            st.markdown("### 🎵 Now Playing")
+            st.markdown("### Now Playing")
             song_data = df[df["Song"] == selected_song].iloc[0]
             tempo = get_average_tempo(song_data['Tempo'])
             st.markdown(f"*Tempo:* {tempo:.1f} BPM")
@@ -674,26 +761,25 @@ def main():
     
     # Chord Search Tab
     with tabs[1]:
-        st.markdown("### 🎼 Find Songs by Chord Pattern")
+        st.markdown("### Find Songs by Chord Pattern")
         st.markdown("""
         Select chords to find songs containing your pattern:
         - Your chord sequence can appear anywhere in the song
-        - Pink highlights show where your sequence appears
+        - Highlighted text shows where your sequence appears
         - Songs are ranked by how many times your pattern appears
         - Lower similarity threshold to find more matches
         """)
         
         # Lower default similarity threshold
         selected_chords, similarity_threshold, tempo_filter = display_chord_selector(df)
-        
         if selected_chords:
-            st.markdown("### 🎸 Selected Pattern")
+            st.markdown("### Selected Pattern")
             st.markdown(f"*Progression:* {get_chord_progression(selected_chords)}")
             
             matching_songs = get_songs_by_chord_sequence(df, selected_chords, similarity_threshold, tempo_filter)
             
             if matching_songs:
-                st.markdown(f"### 🎵 Found {len(matching_songs)} Songs Containing Your Pattern")
+                st.markdown(f"### Found {len(matching_songs)} Songs Containing Your Pattern")
                 for song_info in matching_songs:
                     with st.container():
                         display_chord_progression(song_info)
@@ -704,7 +790,7 @@ def main():
     # Recommendations Tab
     with tabs[2]:
         if selected_song:
-            st.markdown("### 🎧 Recommended Songs")
+            st.markdown("### Recommended Songs")
             with st.spinner("Finding similar songs..."):
                 song_index = df[df["Song"] == selected_song].index[0]
                 input_song, recommendations = get_recommendations(model, X_cnn, X_flat, df, song_index)
@@ -782,5 +868,5 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
 
-if  __name__ == "__main__":
+if __name__ == "__main__":
     main()
