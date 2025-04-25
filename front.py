@@ -159,12 +159,62 @@ st.markdown("""
         padding: 0.5rem 0;
     }
     
-    input[type="text"], .stSelectbox>div>div {
+    /* Updated styling for select boxes with stronger selectors */
+    div[data-baseweb="select"] {
         background-color: #1A1A1A !important;
-        border: 1px solid #333333 !important;
-        border-radius: 8px !important;
+    }
+
+    div[data-baseweb="select"] * {
         color: #FFFFFF !important;
-        padding: 0.7rem !important;
+    }
+
+    div[data-baseweb="select"] input {
+        color: #FFFFFF !important;
+    }
+
+    div[data-baseweb="select"] [data-testid="stMarkdownContainer"] * {
+        color: #FFFFFF !important;
+    }
+
+    /* Style dropdown options */
+    div[role="listbox"] {
+        background-color: #1A1A1A !important;
+        border: 1px solid #4A90E2 !important;
+    }
+
+    div[role="option"] {
+        background-color: #1A1A1A !important;
+        color: #FFFFFF !important;
+    }
+
+    div[role="option"]:hover {
+        background-color: #2A2A2A !important;
+    }
+
+    /* Force text color for select box */
+    .stSelectbox div[data-baseweb="select"] div {
+        color: #FFFFFF !important;
+    }
+
+    .stSelectbox div[data-baseweb="select"] span {
+        color: #FFFFFF !important;
+    }
+
+    /* Additional styling for better visibility */
+    .stSelectbox > div {
+        border: 1px solid #4A90E2 !important;
+    }
+
+    .stSelectbox [data-baseweb="select"] {
+        background-color: #1A1A1A !important;
+    }
+
+    .stSelectbox [data-baseweb="value-container"] {
+        color: #FFFFFF !important;
+    }
+
+    .stSelectbox [data-baseweb="value-container"] * {
+        color: #FFFFFF !important;
     }
     
     .stSlider {
@@ -317,35 +367,49 @@ def get_recommendations(model, X_cnn, X_flat, df, song_index, num_recommendation
     return input_song, recommendations
 
 def get_audio_path(song_name):
-    """Get the exact audio file path from audio_clips folder"""
-    return str(Path('audio_clips') / f"{song_name}.wav")
+    """Get the exact audio file path from compressed_mp3 folder"""
+    audio_dir = Path('compressed_mp3')
+    audio_path = audio_dir / f"{song_name}.mp3"
+    
+    # Check if directory exists
+    if not audio_dir.exists():
+        raise FileNotFoundError(f"Directory '{audio_dir}' not found. Please create the 'compressed_mp3' directory.")
+    
+    # Check if file exists and is an MP3
+    if not audio_path.exists():
+        raise FileNotFoundError(f"Audio file for '{song_name}' not found in {audio_dir}")
+    
+    if not audio_path.suffix.lower() == '.mp3':
+        raise ValueError(f"File {audio_path} is not an MP3 file")
+        
+    return str(audio_path)
 
 def display_audio_player(song_name, title_color="#4A90E2"):
     """Display an audio player with song title"""
     try:
-        audio_dir = Path('audio_clips')
-        if not audio_dir.exists():
-            st.error("Audio clips directory not found!")
-            return
-            
         audio_path = get_audio_path(song_name)
-        if os.path.exists(audio_path):
-            st.markdown(f"""
-            <div class="audio-card">
-                <h4 style='color: {title_color}; margin-bottom: 10px;'>{song_name}</h4>
-            </div>
-            """, unsafe_allow_html=True)
-            st.audio(audio_path)
-        else:
-            st.markdown(f"""
-            <div class="audio-card">
-                <h4 style='color: {title_color}; margin-bottom: 10px;'>{song_name}</h4>
-                <p style='color: #cccccc;'>Audio file not found</p>
-            </div>
-            """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+        <div class="audio-card">
+            <h4 style='color: {title_color}; margin-bottom: 10px;'>{song_name}</h4>
+        </div>
+        """, unsafe_allow_html=True)
+        st.audio(audio_path)
             
+    except FileNotFoundError as e:
+        st.markdown(f"""
+        <div class="audio-card">
+            <h4 style='color: {title_color}; margin-bottom: 10px;'>{song_name}</h4>
+            <p style='color: #ff6b6b;'>⚠ {str(e)}</p>
+        </div>
+        """, unsafe_allow_html=True)
     except Exception as e:
-        st.error(f"Error accessing audio file: {str(e)}")
+        st.markdown(f"""
+        <div class="audio-card">
+            <h4 style='color: {title_color}; margin-bottom: 10px;'>{song_name}</h4>
+            <p style='color: #ff6b6b;'>⚠ Error playing audio: {str(e)}</p>
+        </div>
+        """, unsafe_allow_html=True)
 
 def plot_similarity_scores(similarities, songs):
     """Plot similarity scores with enhanced styling"""
@@ -587,7 +651,7 @@ def display_chord_selector(df):
         
         st.markdown(f"""
         Looking for songs with tempo between 
-        *{tempo_filter[0]:.1f}* and *{tempo_filter[1]:.1f}* BPM
+        {tempo_filter[0]:.1f} and {tempo_filter[1]:.1f} BPM
         """)
     
     # Add similarity threshold slider
@@ -616,7 +680,7 @@ def plot_chord_distribution(df):
     chord_counts = pd.Series(all_chords).value_counts()
     
     fig, ax = plt.subplots(figsize=(12, 6))
-    sns.barplot(x=chord_counts.index, y=chord_counts.values, ax=ax, palette='viridis')
+    sns.barplot(x=chord_counts.index, y=chord_counts.values, hue=chord_counts.index, legend=False, ax=ax)
     
     plt.title('Chord Distribution in Dataset', pad=20)
     plt.xlabel('Chord')
@@ -755,7 +819,7 @@ def main():
             st.markdown("### Now Playing")
             song_data = df[df["Song"] == selected_song].iloc[0]
             tempo = get_average_tempo(song_data['Tempo'])
-            st.markdown(f"*Tempo:* {tempo:.1f} BPM")
+            st.markdown(f"Tempo: {tempo:.1f} BPM")
             display_song_info(selected_song, df)
             display_audio_player(selected_song)
     
@@ -774,7 +838,7 @@ def main():
         selected_chords, similarity_threshold, tempo_filter = display_chord_selector(df)
         if selected_chords:
             st.markdown("### Selected Pattern")
-            st.markdown(f"*Progression:* {get_chord_progression(selected_chords)}")
+            st.markdown(f"Progression: {get_chord_progression(selected_chords)}")
             
             matching_songs = get_songs_by_chord_sequence(df, selected_chords, similarity_threshold, tempo_filter)
             
@@ -868,5 +932,5 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
 
-if __name__ == "__main__":
+if _name_ == "_main_":
     main()
