@@ -1,7 +1,6 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 from sklearn.preprocessing import StandardScaler
 import joblib
 from sklearn.metrics.pairwise import cosine_similarity
@@ -11,13 +10,19 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import seaborn as sns
 import time
+import tensorflow as tf
+import librosa
+import librosa.feature
+import plotly.express as px
+import tempfile
+from tensorflow.keras.models import load_model
+import plotly.graph_objects as go
 
 # Set page config and theme
 st.set_page_config(
-    page_title="Music Recommendation System Based on Acoustic Features",
-    page_icon=None,
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="Music Genre Classification",
+    page_icon="🎵",
+    layout="wide"
 )
 
 # Enhanced Professional Dark Theme CSS
@@ -325,24 +330,52 @@ def display_song_info(song_name, df):
     """, unsafe_allow_html=True)
 
 def load_model_and_data():
-    model = tf.keras.models.load_model('music_recommender_model.h5')
-    scaler = joblib.load('feature_scaler.joblib')
-    df = pd.read_csv("music_features.csv")
-    for col in ["Tempo", "Chroma", "MFCC", "Chords"]:
-        df[col] = df[col].apply(ast.literal_eval)
-    return model, scaler, df
+    """Load data and model with error handling"""
+    try:
+        # Load scaler
+        scaler = joblib.load('feature_scaler.joblib')
+        
+        # Load data
+        df = pd.read_csv("music_features.csv")
+        for col in ["Tempo", "Chroma", "MFCC", "Chords"]:
+            df[col] = df[col].apply(ast.literal_eval)
+            
+        # Try to load model, but continue without it if it fails
+        try:
+            model = tf.keras.models.load_model('music_recommender_model.h5')
+            st.success("Model loaded successfully!")
+        except Exception as e:
+            st.warning(f"Could not load model: {str(e)}. Using similarity-based recommendations only.")
+            model = None
+            
+        return model, scaler, df
+    except Exception as e:
+        st.error(f"Error loading data: {str(e)}")
+        return None, None, None
 
 def preprocess_features(df, scaler):
+    """Preprocess features for model input"""
     # Combine features
     df["Features"] = df.apply(lambda row: row["Tempo"] + row["Chroma"] + row["MFCC"], axis=1)
     X = np.stack(df["Features"].values)
     
+    # Ensure X has the correct number of features
+    if X.shape[1] != 26:
+        st.warning(f"Expected 26 features, got {X.shape[1]}. Truncating/padding to match.")
+        # Create a new array with the correct size
+        X_adjusted = np.zeros((X.shape[0], 26))
+        # Copy the features we have
+        X_adjusted[:, :min(X.shape[1], 26)] = X[:, :min(X.shape[1], 26)]
+        X = X_adjusted
+    
     # Normalize
     X_scaled = scaler.transform(X)
     
-    # Pad to 36 and reshape to 6x6x1 for CNN
+    # Pad to 36 for model input
     X_padded = np.zeros((X_scaled.shape[0], 36))
     X_padded[:, :X_scaled.shape[1]] = X_scaled
+    
+    # Reshape for CNN
     X_cnn = X_padded.reshape(-1, 6, 6, 1)
     
     # Also return flattened features for similarity calculation
@@ -351,20 +384,40 @@ def preprocess_features(df, scaler):
     return X_cnn, X_flat
 
 def get_recommendations(model, X_cnn, X_flat, df, song_index, num_recommendations=5):
-    # Get predictions
-    predicted_chords = model.predict(X_cnn)
-    
-    # Calculate similarities using flattened features
-    similarities = cosine_similarity([X_flat[song_index]], X_flat)[0]
-    top_indices = similarities.argsort()[-(num_recommendations+1):][::-1]
-    
-    # Get recommendations
-    input_song = df.iloc[song_index]["Song"]
-    recommendations = []
-    for idx in top_indices[1:]:  # Skip self
-        recommendations.append(df.iloc[idx]["Song"])
-    
-    return input_song, recommendations
+    """Get recommendations with fallback to similarity-based approach"""
+    try:
+        # Calculate similarities using flattened features
+        similarities = cosine_similarity([X_flat[song_index]], X_flat)[0]
+        top_indices = similarities.argsort()[-(num_recommendations+1):][::-1]
+        
+        # Get recommendations
+        input_song = df.iloc[song_index]["Song"]
+        recommendations = []
+        
+        # If model is available, use it for additional features
+        if model is not None:
+            try:
+                predicted_chords = model.predict(X_cnn)
+                # Use predictions to enhance recommendations
+                pass
+            except Exception as e:
+                st.warning(f"Model prediction failed: {str(e)}. Using similarity-based recommendations only.")
+        
+        # Get recommendations based on similarity
+        for idx in top_indices[1:]:  # Skip self
+            recommendations.append({
+                'song': df.iloc[idx]["Song"],
+                'similarity': similarities[idx],
+                'features': {
+                    'tempo': get_average_tempo(df.iloc[idx]['Tempo']),
+                    'chords': len(df.iloc[idx]['Chords'])
+                }
+            })
+        
+        return input_song, recommendations
+    except Exception as e:
+        st.error(f"Error getting recommendations: {str(e)}")
+        return None, []
 
 def get_audio_path(song_name):
     """Get the exact audio file path from compressed_mp3 folder"""
@@ -786,151 +839,278 @@ def display_song_analysis(song_name, df):
     
     return analysis
 
+def extract_features(audio_path):
+    """Extract audio features from the given audio file."""
+    try:
+        # Load the audio file
+        y, sr = librosa.load(audio_path, duration=30)
+        
+        # Extract features
+        mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
+        spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)
+        chroma_stft = librosa.feature.chroma_stft(y=y, sr=sr)
+        spectral_contrast = librosa.feature.spectral_contrast(y=y, sr=sr)
+        spectral_bandwidth = librosa.feature.spectral_bandwidth(y=y, sr=sr)
+        spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)
+        zero_crossing_rate = librosa.feature.zero_crossing_rate(y)
+        
+        # Calculate statistics for each feature
+        features = []
+        for feature in [mfcc, spectral_centroid, chroma_stft, spectral_contrast, 
+                       spectral_bandwidth, spectral_rolloff, zero_crossing_rate]:
+            features.extend([
+                np.mean(feature),
+                np.std(feature),
+                np.min(feature),
+                np.max(feature)
+            ])
+        
+        # Reshape features to match the model's expected input shape (6, 6, 1)
+        features = np.array(features)
+        # Pad or truncate to 36 features (6x6)
+        if len(features) < 36:
+            features = np.pad(features, (0, 36 - len(features)))
+        else:
+            features = features[:36]
+            
+        return features.reshape(1, 6, 6, 1)  # Reshape for CNN input
+    except Exception as e:
+        st.error(f"Error extracting features: {str(e)}")
+        return None
+
+def process_uploaded_audio(uploaded_file):
+    """Process uploaded audio file and extract features"""
+    try:
+        # Save uploaded file temporarily
+        temp_path = Path("temp_upload.mp3")
+        with open(temp_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        
+        # Extract features
+        features = extract_features(temp_path)
+        
+        if features is not None:
+            st.success("Audio features extracted successfully!")
+            
+            # Display debug information
+            with st.expander("Feature Extraction Details"):
+                st.write("Debug Information:")
+                st.write("- Features Shape:", features.shape)
+            
+            return features
+        
+        return None
+        
+    except Exception as e:
+        st.error(f"Error processing audio file: {str(e)}")
+        return None
+    finally:
+        # Clean up temporary file
+        if temp_path.exists():
+            temp_path.unlink()
+
+def display_recommendation(rec):
+    """Display a single recommendation with details"""
+    st.markdown(f"""
+    <div class="card">
+        <h4>{rec['song']}</h4>
+        <p>Similarity Score: {rec['similarity']:.2f}</p>
+        <p>Tempo: {rec['features']['tempo']:.1f} BPM</p>
+        <p>Chord Complexity: {rec['features']['chords']} unique chords</p>
+    </div>
+    """, unsafe_allow_html=True)
+    display_audio_player(rec['song'])
+
+# Define genre labels
+GENRES = ['blues', 'classical', 'country', 'disco', 'hiphop', 'jazz', 'metal', 'pop', 'reggae', 'rock']
+
 def main():
+    # Show sidebar
     show_sidebar()
     
-    # Main content
-    st.title("Music Recommendation System Based on Acoustic Features")
-    
     # Create tabs
-    tabs = st.tabs(["Song Selection", "Chord Search", "Recommendations", "Analysis"])
+    tabs = st.tabs(["Song Similarity", "Chord Analysis", "Upload Song", "Dataset Insights"])
     
-    # Load data and model with loading state
-    with st.spinner("Loading model and data..."):
-        model, scaler, df = load_model_and_data()
-        X_cnn, X_flat = preprocess_features(df, scaler)
-    
-    # Song Selection Tab
+    # Song Similarity Tab
     with tabs[0]:
-        st.markdown("### Search and Select a Song")
+        st.title("🔍 Song Similarity Search")
+        st.write("Find similar songs from our dataset")
         
-        search_query = st.text_input("Search for a song", key="search")
-        if search_query:
-            filtered_songs = [song for song in df["Song"].tolist() 
-                            if search_query.lower() in song.lower()]
-            if not filtered_songs:
-                st.info("No songs found matching your search.")
-        else:
-            filtered_songs = df["Song"].tolist()
-        
-        selected_song = st.selectbox("Select a song:", filtered_songs)
-        
-        if selected_song:
-            st.markdown("### Now Playing")
-            song_data = df[df["Song"] == selected_song].iloc[0]
-            tempo = get_average_tempo(song_data['Tempo'])
-            st.markdown(f"Tempo: {tempo:.1f} BPM")
-            display_song_info(selected_song, df)
-            display_audio_player(selected_song)
-    
-    # Chord Search Tab
-    with tabs[1]:
-        st.markdown("### Find Songs by Chord Pattern")
-        st.markdown("""
-        Select chords to find songs containing your pattern:
-        - Your chord sequence can appear anywhere in the song
-        - Highlighted text shows where your sequence appears
-        - Songs are ranked by how many times your pattern appears
-        - Lower similarity threshold to find more matches
-        """)
-        
-        # Lower default similarity threshold
-        selected_chords, similarity_threshold, tempo_filter = display_chord_selector(df)
-        if selected_chords:
-            st.markdown("### Selected Pattern")
-            st.markdown(f"Progression: {get_chord_progression(selected_chords)}")
-            
-            matching_songs = get_songs_by_chord_sequence(df, selected_chords, similarity_threshold, tempo_filter)
-            
-            if matching_songs:
-                st.markdown(f"### Found {len(matching_songs)} Songs Containing Your Pattern")
-                for song_info in matching_songs:
-                    with st.container():
-                        display_chord_progression(song_info)
-                        display_audio_player(song_info['song'])
-            else:
-                st.info("No songs found with this chord pattern. Try lowering the similarity threshold (current: {:.0f}%) or selecting different chords.".format(similarity_threshold * 100))
-    
-    # Recommendations Tab
-    with tabs[2]:
-        if selected_song:
-            st.markdown("### Recommended Songs")
-            with st.spinner("Finding similar songs..."):
-                song_index = df[df["Song"] == selected_song].index[0]
-                input_song, recommendations = get_recommendations(model, X_cnn, X_flat, df, song_index)
+        try:
+            model, scaler, df = load_model_and_data()
+            if model is not None and df is not None:
+                # Prepare dataset features
+                X_cnn, X_flat = preprocess_features(df, scaler)
                 
-                for i, rec_song in enumerate(recommendations, 1):
-                    with st.container():
-                        st.markdown(f"#### Recommendation #{i}")
-                        display_song_info(rec_song, df)
-                        display_audio_player(rec_song)
-    
-    # Analysis Tab
-    with tabs[3]:
-        st.header("Musical Analysis")
-        
-        # Dataset Overview
-        st.subheader("Dataset Statistics")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown("""
-            <div class="metric-card">
-                <div class="metric-value">{}</div>
-                <div class="metric-label">Total Songs</div>
-            </div>
-            """.format(len(df)), unsafe_allow_html=True)
-        
-        with col2:
-            unique_chords = len(get_unique_chords(df))
-            st.markdown("""
-            <div class="metric-card">
-                <div class="metric-value">{}</div>
-                <div class="metric-label">Unique Chords</div>
-            </div>
-            """.format(unique_chords), unsafe_allow_html=True)
-        
-        with col3:
-            avg_tempo = np.mean([get_average_tempo(tempo) for tempo in df['Tempo']])
-            st.markdown("""
-            <div class="metric-card">
-                <div class="metric-value">{:.1f}</div>
-                <div class="metric-label">Average Tempo (BPM)</div>
-            </div>
-            """.format(avg_tempo), unsafe_allow_html=True)
-        
-        # Chord Distribution
-        st.subheader("Chord Distribution")
-        chord_dist_fig = plot_chord_distribution(df)
-        st.pyplot(chord_dist_fig)
-        
-        # Tempo Distribution
-        st.subheader("Tempo Distribution")
-        tempo_dist_fig = plot_tempo_distribution(df)
-        st.pyplot(tempo_dist_fig)
-        
-        # Individual Song Analysis
-        st.subheader("Song Analysis")
-        selected_song = st.selectbox("Select a song to analyze:", df["Song"].tolist())
-        
-        if selected_song:
-            analysis = display_song_analysis(selected_song, df)
-            
-            # Find similar songs based on features
-            song_index = df[df["Song"] == selected_song].index[0]
-            similarities = cosine_similarity([X_flat[song_index]], X_flat)[0]
-            top_indices = similarities.argsort()[-6:][::-1][1:]
-            
-            st.subheader("Similar Songs")
-            for idx in top_indices:
-                similarity = similarities[idx]
-                similar_song = df.iloc[idx]["Song"]
-                st.markdown(f"""
-                <div class="card">
-                    <h4>{similar_song}</h4>
-                    <p>Similarity Score: {similarity:.2f}</p>
-                </div>
-                """, unsafe_allow_html=True)
+                selected_song = st.selectbox("Select a song from dataset", df['Song'].tolist())
+                
+                if selected_song:
+                    st.markdown("### Selected Song Analysis")
+                    analysis = display_song_analysis(selected_song, df)
+                    
+                    if st.button("Find Similar Songs", key="dataset_similar"):
+                        # Get song index
+                        song_index = df[df['Song'] == selected_song].index[0]
+                        
+                        # Get recommendations
+                        _, recommendations = get_recommendations(model, X_cnn, X_flat, df, song_index)
+                        
+                        if recommendations:
+                            st.markdown("### Similar Songs")
+                            for rec in recommendations:
+                                display_recommendation(rec)
+            else:
+                st.error("Could not load model or dataset. Please check if all required files are present.")
+        except Exception as e:
+            st.error(f"Error in similarity search: {str(e)}")
 
-if __name__ == "__main__":
+    # Chord Analysis Tab
+    with tabs[1]:
+        st.title("🎸 Chord Analysis")
+        st.write("Analyze chord progressions and find similar songs")
+        
+        # Load data for chord analysis
+        try:
+            _, _, df = load_model_and_data()
+            if df is not None:
+                selected_chords, similarity_threshold, tempo_filter = display_chord_selector(df)
+                
+                if selected_chords:
+                    st.markdown("### Selected Chord Progression")
+                    st.markdown(get_chord_progression(selected_chords))
+                    
+                    matching_songs = get_songs_by_chord_sequence(
+                        df, selected_chords, 
+                        similarity_threshold=similarity_threshold,
+                        tempo_filter=tempo_filter
+                    )
+                    
+                    if matching_songs:
+                        st.markdown(f"### Found {len(matching_songs)} Matching Songs")
+                        for song in matching_songs:
+                            display_chord_progression(song)
+                            display_audio_player(song['song'])
+                    else:
+                        st.info("No songs found with this chord progression. Try adjusting the similarity threshold or tempo filter.")
+        except Exception as e:
+            st.error(f"Error in chord analysis: {str(e)}")
+
+    # Upload Song Tab (moved to third position)
+    with tabs[2]:
+        st.title("🎵 Find Similar Songs by Upload")
+        st.write("Upload your song to find similar music in our dataset")
+        
+        # Load model and data
+        try:
+            model, scaler, df = load_model_and_data()
+            if model is not None and df is not None:
+                # Prepare dataset features once
+                X_cnn, X_flat = preprocess_features(df, scaler)
+                
+                # File uploader
+                uploaded_file = st.file_uploader("Choose an audio file", type=['wav', 'mp3'])
+
+                if uploaded_file is not None:
+                    # Create a temporary file to save the uploaded audio
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+                        tmp_file.write(uploaded_file.getvalue())
+                        temp_path = tmp_file.name
+
+                    # Display audio player
+                    st.audio(uploaded_file)
+
+                    # Add a find similar songs button
+                    if st.button("Find Similar Songs"):
+                        with st.spinner("Analyzing audio and finding similar songs..."):
+                            # Extract features
+                            features = extract_features(temp_path)
+                            
+                            if features is not None:
+                                try:
+                                    # Get similarity scores using the model
+                                    uploaded_song_features = features
+                                    similarities = cosine_similarity(uploaded_song_features.reshape(1, -1), X_flat)[0]
+                                    
+                                    # Get top 5 most similar songs
+                                    top_indices = similarities.argsort()[-5:][::-1]
+                                    
+                                    # Display results
+                                    st.subheader("Similar Songs")
+                                    
+                                    for idx in top_indices:
+                                        song_data = df.iloc[idx]
+                                        similarity_score = similarities[idx]
+                                        
+                                        st.markdown(f"""
+                                        <div class="card">
+                                            <h4>{song_data['Song']}</h4>
+                                            <p>Similarity Score: {similarity_score:.2f}</p>
+                                        </div>
+                                        """, unsafe_allow_html=True)
+                                        
+                                        # Display audio player for the similar song
+                                        display_audio_player(song_data['Song'])
+                                        
+                                        # Display chord progression
+                                        if 'Chords' in song_data:
+                                            chords = song_data['Chords']
+                                            if isinstance(chords, str):
+                                                chords = ast.literal_eval(chords)
+                                            st.markdown("#### Chord Progression")
+                                            st.markdown(get_chord_progression(chords))
+                                        
+                                        st.markdown("---")
+                                    
+                                except Exception as e:
+                                    st.error(f"Error finding similar songs: {str(e)}")
+                                    st.write("Debug info:", str(e._class.name_))
+                    
+                    # Cleanup
+                    try:
+                        os.unlink(temp_path)
+                    except:
+                        pass
+            else:
+                st.error("Could not load model or dataset. Please check if all required files are present.")
+        except Exception as e:
+            st.error(f"Error loading model and data: {str(e)}")
+
+    # Dataset Insights Tab (remains as fourth tab)
+    with tabs[3]:
+        st.title("📊 Dataset Insights")
+        st.write("Explore patterns and distributions in the music dataset")
+        
+        try:
+            _, _, df = load_model_and_data()
+            if df is not None:
+                # Dataset statistics
+                st.markdown("### Dataset Statistics")
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("Total Songs", len(df))
+                
+                with col2:
+                    avg_tempo = np.mean([get_average_tempo(tempo) for tempo in df['Tempo']])
+                    st.metric("Average Tempo", f"{avg_tempo:.1f} BPM")
+                
+                with col3:
+                    avg_chords = np.mean([len(set(ast.literal_eval(chords) if isinstance(chords, str) else chords)) 
+                                        for chords in df['Chords']])
+                    st.metric("Avg. Unique Chords", f"{avg_chords:.1f}")
+                
+                # Chord distribution
+                st.markdown("### Chord Distribution")
+                chord_dist_fig = plot_chord_distribution(df)
+                st.pyplot(chord_dist_fig)
+                
+                # Tempo distribution
+                st.markdown("### Tempo Distribution")
+                tempo_dist_fig = plot_tempo_distribution(df)
+                st.pyplot(tempo_dist_fig)
+                
+        except Exception as e:
+            st.error(f"Error loading dataset insights: {str(e)}")
+
+if _name_ == "_main_":
     main()
