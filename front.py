@@ -20,7 +20,7 @@ import plotly.graph_objects as go
 
 # Set page config and theme
 st.set_page_config(
-    page_title="Music Recommendation System Based on Acoustic Features",
+    page_title="Music Genre Classification",
     page_icon="🎵",
     layout="wide"
 )
@@ -359,23 +359,12 @@ def preprocess_features(df, scaler):
     df["Features"] = df.apply(lambda row: row["Tempo"] + row["Chroma"] + row["MFCC"], axis=1)
     X = np.stack(df["Features"].values)
     
-    # Ensure X has the correct number of features
-    if X.shape[1] != 26:
-        st.warning(f"Expected 26 features, got {X.shape[1]}. Truncating/padding to match.")
-        # Create a new array with the correct size
-        X_adjusted = np.zeros((X.shape[0], 26))
-        # Copy the features we have
-        X_adjusted[:, :min(X.shape[1], 26)] = X[:, :min(X.shape[1], 26)]
-        X = X_adjusted
-    
     # Normalize
     X_scaled = scaler.transform(X)
     
-    # Pad to 36 for model input
+    # Pad to 36 and reshape to 6x6x1 for CNN
     X_padded = np.zeros((X_scaled.shape[0], 36))
     X_padded[:, :X_scaled.shape[1]] = X_scaled
-    
-    # Reshape for CNN
     X_cnn = X_padded.reshape(-1, 6, 6, 1)
     
     # Also return flattened features for similarity calculation
@@ -453,14 +442,14 @@ def display_audio_player(song_name, title_color="#4A90E2"):
         st.markdown(f"""
         <div class="audio-card">
             <h4 style='color: {title_color}; margin-bottom: 10px;'>{song_name}</h4>
-            <p style='color: #ff6b6b;'>⚠ {str(e)}</p>
+            <p style='color: #ff6b6b;'>⚠️ {str(e)}</p>
         </div>
         """, unsafe_allow_html=True)
     except Exception as e:
         st.markdown(f"""
         <div class="audio-card">
             <h4 style='color: {title_color}; margin-bottom: 10px;'>{song_name}</h4>
-            <p style='color: #ff6b6b;'>⚠ Error playing audio: {str(e)}</p>
+            <p style='color: #ff6b6b;'>⚠️ Error playing audio: {str(e)}</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -571,13 +560,34 @@ def get_tempo_range(tempo, tolerance=0.2):
     return lower, upper
 
 def get_average_tempo(tempo_features):
-    """Calculate average tempo from tempo features"""
+    """Extract the primary tempo value from the feature list."""
     try:
+        # If the feature is stored as a string representation of a list
         if isinstance(tempo_features, str):
-            tempo_features = ast.literal_eval(tempo_features)
-        return sum(tempo_features) / len(tempo_features)
-    except:
-        return 0
+            tempo_list = ast.literal_eval(tempo_features)
+        # If it's already a list
+        elif isinstance(tempo_features, list):
+            tempo_list = tempo_features
+        # If it's somehow already a number (less likely)
+        elif isinstance(tempo_features, (int, float)):
+            return float(tempo_features) 
+        else:
+            # Unrecognized format
+            st.warning(f"Unrecognized tempo format: {type(tempo_features)}")
+            return 0.0
+
+        # Check if the list is valid and contains a number
+        if tempo_list and isinstance(tempo_list[0], (int, float)):
+            # Return the first element as the primary tempo
+            return float(tempo_list[0])
+        else:
+            st.warning(f"Could not extract valid tempo from: {tempo_list}")
+            return 0.0
+            
+    except Exception as e:
+        # Log the error for debugging
+        st.error(f"Error processing tempo features ({tempo_features}): {e}")
+        return 0.0 # Return a default value on error
 
 def get_songs_by_chord_sequence(df, selected_chords, similarity_threshold=0.2, tempo_filter=None):
     """Get songs that contain the selected chord sequence anywhere in their progression"""
@@ -704,7 +714,7 @@ def display_chord_selector(df):
         
         st.markdown(f"""
         Looking for songs with tempo between 
-        {tempo_filter[0]:.1f} and {tempo_filter[1]:.1f} BPM
+        *{tempo_filter[0]:.1f}* and *{tempo_filter[1]:.1f}* BPM
         """)
     
     # Add similarity threshold slider
@@ -842,38 +852,37 @@ def display_song_analysis(song_name, df):
 def extract_features(audio_path):
     """Extract audio features from the given audio file."""
     try:
-        # Load the audio file
-        y, sr = librosa.load(audio_path, duration=30)
+        # Load the audio file with more robust error handling
+        try:
+            # First try loading with soundfile (preferred method)
+            import soundfile as sf
+            y, sr = sf.read(audio_path)
+            # Convert to mono if stereo
+            if len(y.shape) > 1:
+                y = y.mean(axis=1)
+        except Exception as e:
+            # Fallback to librosa's load with better error handling
+            y, sr = librosa.load(audio_path, sr=None, duration=30, mono=True)
         
-        # Extract features
-        mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
-        spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)
-        chroma_stft = librosa.feature.chroma_stft(y=y, sr=sr)
-        spectral_contrast = librosa.feature.spectral_contrast(y=y, sr=sr)
-        spectral_bandwidth = librosa.feature.spectral_bandwidth(y=y, sr=sr)
-        spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)
-        zero_crossing_rate = librosa.feature.zero_crossing_rate(y)
+        # Extract features to match dataset format
+        tempo = [float(librosa.beat.beat_track(y=y, sr=sr)[0])]  # Convert to float and list
+        chroma = np.mean(librosa.feature.chroma_stft(y=y, sr=sr), axis=1).tolist()
+        mfcc = np.mean(librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13), axis=1).tolist()  # Using 13 MFCCs
         
-        # Calculate statistics for each feature
-        features = []
-        for feature in [mfcc, spectral_centroid, chroma_stft, spectral_contrast, 
-                       spectral_bandwidth, spectral_rolloff, zero_crossing_rate]:
-            features.extend([
-                np.mean(feature),
-                np.std(feature),
-                np.min(feature),
-                np.max(feature)
-            ])
+        # Combine features to match dataset format (1 tempo + 12 chroma + 13 MFCC = 26 features)
+        features = np.array(tempo + chroma + mfcc, dtype=float)
         
-        # Reshape features to match the model's expected input shape (6, 6, 1)
-        features = np.array(features)
-        # Pad or truncate to 36 features (6x6)
-        if len(features) < 36:
-            features = np.pad(features, (0, 36 - len(features)))
-        else:
-            features = features[:36]
-            
-        return features.reshape(1, 6, 6, 1)  # Reshape for CNN input
+        # Load the scaler
+        scaler = joblib.load('feature_scaler.joblib')
+        
+        # Scale the features
+        features_scaled = scaler.transform(features.reshape(1, -1))
+        
+        # Pad to 36 features to match dataset format
+        features_padded = np.zeros((1, 36))
+        features_padded[0, :features_scaled.shape[1]] = features_scaled
+        
+        return features_padded  # Return as 2D array for similarity calculation
     except Exception as e:
         st.error(f"Error extracting features: {str(e)}")
         return None
@@ -995,7 +1004,7 @@ def main():
         except Exception as e:
             st.error(f"Error in chord analysis: {str(e)}")
 
-    # Upload Song Tab (moved to third position)
+    # Upload Song Tab
     with tabs[2]:
         st.title("🎵 Find Similar Songs by Upload")
         st.write("Upload your song to find similar music in our dataset")
@@ -1004,9 +1013,6 @@ def main():
         try:
             model, scaler, df = load_model_and_data()
             if model is not None and df is not None:
-                # Prepare dataset features once
-                X_cnn, X_flat = preprocess_features(df, scaler)
-                
                 # File uploader
                 uploaded_file = st.file_uploader("Choose an audio file", type=['wav', 'mp3'])
 
@@ -1022,48 +1028,126 @@ def main():
                     # Add a find similar songs button
                     if st.button("Find Similar Songs"):
                         with st.spinner("Analyzing audio and finding similar songs..."):
-                            # Extract features
-                            features = extract_features(temp_path)
-                            
-                            if features is not None:
+                            try:
+                                # Show processing message
+                                st.info("Processing audio file...")
+                                
+                                # Extract features
                                 try:
-                                    # Get similarity scores using the model
-                                    uploaded_song_features = features
-                                    similarities = cosine_similarity(uploaded_song_features.reshape(1, -1), X_flat)[0]
+                                    # Load the audio file
+                                    y, sr = librosa.load(temp_path, sr=None, duration=30, mono=True)
                                     
-                                    # Get top 5 most similar songs
-                                    top_indices = similarities.argsort()[-5:][::-1]
+                                    # Extract raw features, ensuring tempo is immediately a float
+                                    tempo = float(librosa.beat.beat_track(y=y, sr=sr)[0])
+                                    chroma = np.mean(librosa.feature.chroma_stft(y=y, sr=sr), axis=1)
+                                    mfcc = np.mean(librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13), axis=1)
                                     
-                                    # Display results
-                                    st.subheader("Similar Songs")
+                                    # Display extracted features
+                                    st.success("Audio features extracted successfully!")
+                                    st.markdown("### Extracted Features")
                                     
-                                    for idx in top_indices:
-                                        song_data = df.iloc[idx]
-                                        similarity_score = similarities[idx]
+                                    # Create columns for feature display
+                                    col1, col2, col3 = st.columns(3)
+                                    
+                                    with col1:
+                                        st.markdown("#### Tempo")
+                                        # Tempo is already a float here
+                                        st.markdown(f"""
+                                        <div class="metric-card">
+                                            <div class="metric-value">{tempo:.1f}</div>
+                                            <div class="metric-label">BPM</div>
+                                        </div>
+                                        """, unsafe_allow_html=True)
+                                    
+                                    with col2:
+                                        st.markdown("#### Chroma Features")
+                                        chroma_df = pd.DataFrame({
+                                            'Note': ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'],
+                                            'Value': chroma
+                                        })
+                                        st.dataframe(chroma_df, hide_index=True)
+                                    
+                                    with col3:
+                                        st.markdown("#### MFCC Features")
+                                        mfcc_df = pd.DataFrame({
+                                            'Coefficient': range(1, 14),
+                                            'Value': mfcc
+                                        })
+                                        st.dataframe(mfcc_df, hide_index=True)
+                                    
+                                    # Find songs with similar tempo (+-1%)
+                                    target_tempo = tempo
+                                    tolerance = 0.01
+                                    lower_bound = target_tempo * (1 - tolerance)
+                                    upper_bound = target_tempo * (1 + tolerance)
+                                    
+                                    st.markdown(f"### Songs with Tempo between {lower_bound:.1f} and {upper_bound:.1f} BPM")
+                                    
+                                    matching_songs = []
+                                    for idx, row in df.iterrows():
+                                        avg_tempo = get_average_tempo(row['Tempo'])
+                                        if lower_bound <= avg_tempo <= upper_bound:
+                                            # Calculate tempo difference
+                                            tempo_diff = abs(target_tempo - avg_tempo)
+                                            # Store song data along with the difference
+                                            matching_songs.append({"data": row, "diff": tempo_diff})
+                                    
+                                    # Sort matching songs by tempo difference (ascending)
+                                    matching_songs.sort(key=lambda x: x["diff"])
+                                    
+                                    # Optional: Limit the number of results to show variety without overwhelming
+                                    max_results = 10 
+                                    matching_songs = matching_songs[:max_results]
+
+                                    if matching_songs:
+                                        for item in matching_songs:
+                                            song_data = item["data"] # Get the actual song data
+                                            st.markdown(f"""
+                                            <div class="card">
+                                                <h4>{song_data['Song']}</h4>
+                                                <p>Tempo: {get_average_tempo(song_data['Tempo']):.1f} BPM (Diff: {item['diff']:.2f})</p> # Show difference
+                                                <p>Chord Complexity: {len(song_data['Chords'])} unique chords</p>
+                                            </div>
+                                            """, unsafe_allow_html=True)
+                                            
+                                            # Display audio player for the similar song
+                                            display_audio_player(song_data['Song'])
+                                            
+                                            # Display chord progression
+                                            if 'Chords' in song_data:
+                                                chords = song_data['Chords']
+                                                if isinstance(chords, str):
+                                                    chords = ast.literal_eval(chords)
+                                                st.markdown("#### Chord Progression")
+                                                st.markdown(get_chord_progression(chords))
+                                            
+                                            st.markdown("---")
+                                    else:
+                                        st.info("No songs found with a similar tempo in the dataset.")
                                         
+                                except Exception as e:
+                                    st.warning("Feature extraction or tempo matching had some issues, but we'll still show you some great songs!")
+                                    st.error(f"Error details: {str(e)}")
+                                    
+                                    # Fallback: Show random songs if feature extraction or matching fails
+                                    num_recommendations = 5
+                                    random_indices = np.random.choice(len(df), num_recommendations, replace=False)
+                                    
+                                    st.markdown("### Random Song Suggestions") # Changed fallback title
+                                    for idx in random_indices:
+                                        song_data = df.iloc[idx]
                                         st.markdown(f"""
                                         <div class="card">
                                             <h4>{song_data['Song']}</h4>
-                                            <p>Similarity Score: {similarity_score:.2f}</p>
+                                            <p>Tempo: {get_average_tempo(song_data['Tempo']):.1f} BPM</p>
                                         </div>
                                         """, unsafe_allow_html=True)
-                                        
-                                        # Display audio player for the similar song
                                         display_audio_player(song_data['Song'])
-                                        
-                                        # Display chord progression
-                                        if 'Chords' in song_data:
-                                            chords = song_data['Chords']
-                                            if isinstance(chords, str):
-                                                chords = ast.literal_eval(chords)
-                                            st.markdown("#### Chord Progression")
-                                            st.markdown(get_chord_progression(chords))
-                                        
                                         st.markdown("---")
-                                    
-                                except Exception as e:
-                                    st.error(f"Error finding similar songs: {str(e)}")
-                                    st.write("Debug info:", str(e._class.name_))
+                                
+                            except Exception as e:
+                                st.error(f"Error processing song: {str(e)}")
+                                st.write("Debug info:", str(e.__class__.__name__))
                     
                     # Cleanup
                     try:
