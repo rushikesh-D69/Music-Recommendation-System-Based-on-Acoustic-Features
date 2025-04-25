@@ -752,13 +752,6 @@ def main():
         selected_song = st.selectbox("Select a song:", filtered_songs)
         
         if selected_song:
-            # Add this section to clearly display the currently selected song
-            st.markdown(f"""
-            <div class="card" style="background: linear-gradient(145deg, #2A2A2A, #1E1E1E);">
-                <h3 style="color: #4A90E2; margin-bottom: 0.5rem;">Currently Selected: {selected_song}</h3>
-            </div>
-            """, unsafe_allow_html=True)
-            
             st.markdown("### Now Playing")
             song_data = df[df["Song"] == selected_song].iloc[0]
             tempo = get_average_tempo(song_data['Tempo'])
