@@ -20,7 +20,7 @@ import plotly.graph_objects as go
 
 # Set page config and theme
 st.set_page_config(
-    page_title="Music Genre Classification",
+    page_title="Music Recommendation System Based on Acoustic Features",
     page_icon="🎵",
     layout="wide"
 )
