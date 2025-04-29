@@ -20,7 +20,7 @@ import plotly.graph_objects as go
 
 # Set page config and theme
 st.set_page_config(
-    page_title="Music Recommendation System Based on Acoustic Features",
+    page_title="Music Genre Classification",
     page_icon="🎵",
     layout="wide"
 )
@@ -956,6 +956,10 @@ def main():
                 if selected_song:
                     st.markdown("### Selected Song Analysis")
                     analysis = display_song_analysis(selected_song, df)
+                    
+                    # Add audio player for selected song
+                    st.markdown("### Listen to Selected Song")
+                    display_audio_player(selected_song)
                     
                     if st.button("Find Similar Songs", key="dataset_similar"):
                         # Get song index
