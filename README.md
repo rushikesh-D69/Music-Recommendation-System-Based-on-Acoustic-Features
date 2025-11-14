@@ -157,28 +157,6 @@ streamlit run app.py
 
 ---
 
-## Screenshots (Add Images in Repo)
-
-```
-/screenshots
-   ├── ui_home.png
-   ├── feature_visualization.png
-   ├── similarity_heatmap.png
-   └── recommendations.png
-```
-
-Add this in README:
-
-```md
-## Screenshots
-
-![UI Home](screenshots/ui_home.png)
-![Chord Histogram](screenshots/feature_visualization.png)
-![Similarity Heatmap](screenshots/similarity_heatmap.png)
-```
-
----
-
 ## Project Structure
 
 ```
