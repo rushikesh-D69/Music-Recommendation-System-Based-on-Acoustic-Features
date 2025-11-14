@@ -188,6 +188,6 @@ streamlit run app.py
 ## Contributors
 
 * **Chandan Sai Pavan Padala**
-* D Rushikesh
+* **D Rushikesh**
 
 ---
